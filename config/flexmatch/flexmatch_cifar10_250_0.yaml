@@ -1,12 +1,12 @@
 save_dir: ./saved_models
 save_name: flexmatch_cifar10_250_0
 resume: False
-load_path: None
+load_path: ./saved_models/flexmatch_cifar10_250_0/latest_model.pth
 overwrite: True
 use_tensorboard: True
 epoch: 1
 num_train_iter: 1048576
-num_eval_iter: 5000
+num_eval_iter: 500
 num_labels: 250
 batch_size: 64
 eval_batch_size: 1024
@@ -23,7 +23,7 @@ weight_decay: 0.0005
 amp: False
 net: WideResNet
 net_from_name: False
-depth: 28
+depth: 16
 widen_factor: 2
 leaky_slope: 0.1
 dropout: 0.0

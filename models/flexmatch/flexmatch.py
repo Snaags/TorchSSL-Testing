@@ -81,8 +81,8 @@ class FlexMatch:
 
     def train(self, args, logger=None):
 
-        ngpus_per_node = torch.cuda.device_count()
 
+        ngpus_per_node = torch.cuda.device_count()
         # EMA Init
         self.model.train()
         self.ema = EMA(self.model, self.ema_m)
@@ -124,9 +124,11 @@ class FlexMatch:
         selected_label = selected_label.cuda(args.gpu)
 
         classwise_acc = torch.zeros((args.num_classes,)).cuda(args.gpu)
+        print("Dataloaders size labeled size : {} , unlabelled size: {}".format(len(self.loader_dict["train_lb"]),len(self.loader_dict["train_ulb"])))
 
         for (_, x_lb, y_lb), (x_ulb_idx, x_ulb_w, x_ulb_s) in zip(self.loader_dict['train_lb'],
                                                                   self.loader_dict['train_ulb']):
+
             # prevent the training iterations exceed args.num_train_iter
             if self.it > args.num_train_iter:
                 break
@@ -142,8 +144,8 @@ class FlexMatch:
             x_lb, x_ulb_w, x_ulb_s = x_lb.cuda(args.gpu), x_ulb_w.cuda(args.gpu), x_ulb_s.cuda(args.gpu)
             x_ulb_idx = x_ulb_idx.cuda(args.gpu)
             y_lb = y_lb.cuda(args.gpu)
-
             pseudo_counter = Counter(selected_label.tolist())
+            print(pseudo_counter)
             if max(pseudo_counter.values()) < len(self.ulb_dset):  # not all(5w) -1
                 if args.thresh_warmup:
                     for i in range(args.num_classes):
@@ -300,6 +302,7 @@ class FlexMatch:
         self.print_fn(f"model saved: {save_filename}")
 
     def load_model(self, load_path):
+        print(load_path)
         checkpoint = torch.load(load_path)
 
         self.model.load_state_dict(checkpoint['model'])
@@ -327,6 +330,7 @@ class FlexMatch:
         for i in range(1, nu + 1):
             xy[0][i], xy[i][i] = xy[i][i], xy[0][i]
         return [torch.cat(v, dim=0) for v in xy]
+
 
 
 if __name__ == "__main__":

@@ -138,19 +138,22 @@ class FixMatch:
                 for i in range(args.num_classes):
                     classwise_acc[i] = pseudo_counter[i] / max(pseudo_counter.values())
 
+            #Concatenate All samples together
             inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
 
             # inference and calculate sup/unsup losses
             with amp_cm():
+                #Pass all samples through model and seperate logits 
                 logits = self.model(inputs)
                 logits_x_lb = logits[:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s = logits[num_lb:].chunk(2)
-                sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
+                sup_loss = ce_loss(logits_x_lb, y_lb, reduction='mean') #Supervised loss
 
                 # hyper-params for update
                 T = self.t_fn(self.it)
                 p_cutoff = self.p_fn(self.it)
-
+                
+                #Unsupervised Loss
                 unsup_loss, mask, select, pseudo_lb = consistency_loss(logits_x_ulb_s,
                                                                        logits_x_ulb_w,
                                                                        'ce', T, p_cutoff,
