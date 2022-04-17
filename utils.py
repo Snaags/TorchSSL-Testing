@@ -23,7 +23,7 @@ class Teacher:
 
     def set_device(self, device):
         self.device = device
-        self.probabilites_by_idx.cuda(device = self.device)
+        self.probabilities_by_index = self.probabilites_by_idx.cuda(device = self.device)
         self.prediction_count.cuda(device = self.device)
         self.averaged_teacher_logits.cuda(device = self.device) 
     def update(self, logits, x_index):

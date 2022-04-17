@@ -246,7 +246,7 @@ def main_worker(gpu, ngpus_per_node, args):
     trainer = model.retrain
     model.train(args,logger = logger, lb_eval = eval_label,teacher = teacher) #Initial normal run of flexmatch
     for epoch in range(args.epoch):
-        trainer(args, logger=logger,teacher = teacher)
+        trainer(args, logger=logger, lb_eval = eval_label,teacher = teacher)
 
     if not args.multiprocessing_distributed or \
             (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
