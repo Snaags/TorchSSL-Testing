@@ -334,3 +334,7 @@ class SSL_Dataset:
         # print(lb_data.shape)
         # print(ulb_data.shape)
         return lb_dset, ulb_dset
+
+    def get_correct_labels(self):
+        data, targets = self.get_data()
+        return targets

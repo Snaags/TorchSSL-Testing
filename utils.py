@@ -3,6 +3,87 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 import logging
 import yaml
+import numpy as np
+import torch
+import pandas as pd
+from train_utils import ce_loss
+import torch.nn as nn
+class Teacher:
+    """
+    This class enables teacher training without requiring model inference via a lookup table
+    """
+    def __init__(self, num_samples = 50000,num_classes = 10,teacher_threshold = 0.99,device = 0):
+        self.threshold = teacher_threshold
+        self.num_classes = num_classes
+        self.device = device
+        self.lossfn = nn.CrossEntropyLoss()
+        self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
+        self.prediction_count =  torch.zeros((num_samples,), dtype=torch.long ).cuda(device = device)
+        self.averaged_teacher_logits = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
+    def update(self, logits, x_index):
+        with torch.no_grad():
+            prob = torch.softmax(logits, dim=1)
+            prob_value , class_value = torch.max(prob, dim = 1)
+            mask = prob_value.ge(self.threshold).long()
+            masked_probs = mask * prob.transpose(0,1)
+            self.probabilites_by_idx[x_index] = masked_probs.transpose(0,1)
+            self.prediction_count[x_index] += mask
+    def clean(self,arr):
+        arr[arr!=arr] = 0  
+        arr[arr == float("inf")] = 0
+        return arr
+
+
+        
+    def graduate_teacher(self):
+
+        self.averaged_teacher_logits += (self.probabilites_by_idx.transpose(0,1) / self.prediction_count).transpose(0,1)
+        self.averaged_teacher_logits = self.clean(self.averaged_teacher_logits)
+        self.active = (self.prediction_count != 0)
+        print("Total number of active labels : {}".format(torch.sum(self.active)))
+        self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
+        self.prediction_count =  torch.zeros((self.num_samples,), dtype=torch.long ).cuda(device = self.device)
+
+    def loss(self, student_logits,x_index):
+        samples_active = self.active[x_index]
+        student_logits_active = student_logits[samples_active,:]
+        teacher_logits_active = self.averaged_teacher_logits[x_index][samples_active,:]
+        return self.lossfn(student_logits_active,teacher_logits_active)
+
+
+class Label_Metrics:
+    def __init__(self, train):
+        self.labels = torch.from_numpy(np.asarray(train.get_correct_labels())).cuda()
+        self.acc_df = pd.DataFrame(columns = ["u_acc", "iteration", "true accuracy", "threshold","quantity"])
+    def eval_batch(self, pseudolabels,index): 
+        correct = np.sum(np.where(self.labels[index.cpu().numpy()] == pseudolabels.cpu().numpy(),1,0))
+        active = len(pseudolabels)
+        print("Correct labels in batch = {}".format(correct))
+        print("percentage accuracy in batch : {}".format(correct/active))
+        print("Total number of labels in batch = {}".format(active))
+
+    def eval_total(self,selected_label):
+         
+        correct_labels = self.labels
+        correct = torch.sum(self.labels == selected_label).item()
+        active = torch.sum(selected_label != -1).item()
+        print("Total number of correct labels = {}".format(correct))
+        print("percentage accuracy : {}".format(correct/active if active != 0 else 0))
+        print("Total number of labels active = {}".format(active))
+
+    def prob_eval(self,logits, x_index,acc,it):
+        print("logits shape: {}".format(logits.shape))
+        prob = torch.softmax(logits, dim=1)
+        prob_value , class_value = torch.max(prob, dim = 1)
+        correct = (self.labels[x_index] == class_value)
+        num_samples = len(x_index)
+        for threshold in range(90,100):
+            mask = prob_value.ge(threshold*0.01)
+            out = correct * mask
+            self.acc_df.loc[len(self.acc_df)] = [(torch.sum(out)/torch.sum(mask)).cpu().item() if torch.sum(mask) != 0 else 0, it , acc , threshold, torch.sum(mask).cpu().item()]
+            if torch.any(mask):
+                print("Accuracy at threshold ({}) with {} labels: {}".format(threshold ,torch.sum(mask),torch.sum(out)/torch.sum(mask)))
+        self.acc_df.to_csv("teacher.csv", index=False)
 
 
 def over_write_args_from_file(args, yml):

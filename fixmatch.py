@@ -12,7 +12,7 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
+from utils import net_builder, get_logger, count_parameters, over_write_args_from_file, Label_Metrics
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
 from models.fixmatch.fixmatch import FixMatch
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
@@ -230,11 +230,11 @@ def main_worker(gpu, ngpus_per_node, args):
     # If args.resume, load checkpoints from args.load_path
     if args.resume:
         model.load_model(args.load_path)
-
+    eval_label = Label_Metrics(train_dset)
     # START TRAINING of FixMatch
     trainer = model.train
     for epoch in range(args.epoch):
-        trainer(args, logger=logger)
+        trainer(args, logger=logger,lb_eval = eval_label)
 
     if not args.multiprocessing_distributed or \
             (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):

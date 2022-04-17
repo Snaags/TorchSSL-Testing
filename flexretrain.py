@@ -12,9 +12,9 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from utils import net_builder, get_logger, count_parameters, over_write_args_from_file
+from utils import net_builder, get_logger, count_parameters, over_write_args_from_file, Label_Metrics, Teacher
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
-from models.flexmatch.flexmatch import FlexMatch
+from models.flexmatch.flexmatch import FlexRetrain
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
 
@@ -76,10 +76,10 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # random seed has to be set for the syncronization of labeled data sampling in each process.
     assert args.seed is not None
-    random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    cudnn.deterministic = True
+    #random.seed(args.seed)
+    #torch.manual_seed(args.seed)
+    #np.random.seed(args.seed)
+    #cudnn.deterministic = True
 
     # SET UP FOR DISTRIBUTED TRAINING
     if args.distributed:
@@ -120,7 +120,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                     'is_remix': False},
                                    )
 
-    model = FlexMatch(_net_builder,
+    model = FlexRetrain(_net_builder,
                      args.num_classes,
                      args.ema_m,
                      args.T,
@@ -192,6 +192,7 @@ def main_worker(gpu, ngpus_per_node, args):
         _eval_dset = SSL_Dataset(args, alg='flexmatch', name=args.dataset, train=False,
                                 num_classes=args.num_classes, data_dir=args.data_dir)
         eval_dset = _eval_dset.get_dset()
+
     else:
         image_loader = ImageNetLoader(root_path=args.data_dir, num_labels=args.num_labels,
                                       num_class=args.num_classes)
@@ -230,13 +231,22 @@ def main_worker(gpu, ngpus_per_node, args):
     model.set_dset(ulb_dset)
 
     # If args.resume, load checkpoints from args.load_path
+    args.load_path = "{}/{}/{}".format(args.save_dir,args.save_name,args.load_path)
+    args.teacher_path = "{}/{}/{}".format(args.save_dir,args.save_name,args.teacher_path)
+    print(args.load_path)
     if args.resume:
         model.load_model(args.load_path)
 
+    ##Get correct labels for metrics
+
+
+    eval_label = Label_Metrics(train_dset)
     # START TRAINING of flexmatch
-    trainer = model.train
+    teacher = Teacher()
+    trainer = model.retrain
+    model.train(args,logger = logger, lb_eval = eval_label,teacher = teacher) #Initial normal run of flexmatch
     for epoch in range(args.epoch):
-        trainer(args, logger=logger)
+        trainer(args, logger=logger,teacher = teacher)
 
     if not args.multiprocessing_distributed or \
             (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
@@ -268,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument('-sn', '--save_name', type=str, default='flexmatch')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--load_path', type=str, default=None)
+    parser.add_argument('--teacher_path', type=str, default=None)
     parser.add_argument('-o', '--overwrite', action='store_true')
     parser.add_argument('--use_tensorboard', action='store_true', help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
 

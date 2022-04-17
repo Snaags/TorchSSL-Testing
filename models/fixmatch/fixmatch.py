@@ -82,7 +82,7 @@ class FixMatch:
         self.optimizer = optimizer
         self.scheduler = scheduler
 
-    def train(self, args, logger=None):
+    def train(self, args, logger=None,lb_eval = None):
 
         ngpus_per_node = torch.cuda.device_count()
 
@@ -160,7 +160,11 @@ class FixMatch:
                                                                        use_hard_labels=args.hard_label)
 
                 total_loss = sup_loss + self.lambda_u * unsup_loss
+            if x_ulb_idx[select == 1].nelement() != 0:
+                selected_label[x_ulb_idx[select == 1]] = pseudo_lb[select == 1]
 
+            if lb_eval != None and self.it % 50 == 0 and self.it > self.num_eval_iter:
+                lb_eval.eval_total(selected_label)
             # parameter updates
             if args.amp:
                 scaler.scale(total_loss).backward()
