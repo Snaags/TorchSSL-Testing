@@ -28,6 +28,7 @@ class Teacher:
         self.averaged_teacher_logits.cuda(device = self.device) 
     def update(self, logits, x_index):
         with torch.no_grad():
+            logits.cuda(device = self.device)
             prob = torch.softmax(logits, dim=1)
             prob_value , class_value = torch.max(prob, dim = 1)
             mask = prob_value.ge(self.threshold).long()
