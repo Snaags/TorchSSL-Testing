@@ -15,6 +15,7 @@ class Teacher:
     def __init__(self, num_samples = 50000,num_classes = 10,teacher_threshold = 0.99,device = 0):
         self.threshold = teacher_threshold
         self.num_classes = num_classes
+        self.num_samples
         self.device = device
         self.lossfn = nn.CrossEntropyLoss()
         self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
@@ -49,7 +50,7 @@ class Teacher:
         self.averaged_teacher_logits = self.clean(self.averaged_teacher_logits)
         self.active = (self.prediction_count != 0)
         print("Total number of active labels : {}".format(torch.sum(self.active)))
-        self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
+        self.probabilites_by_idx = torch.zeros((self.num_samples,self.num_classes ), dtype=torch.float ).cuda(device = self.device)
         self.prediction_count =  torch.zeros((self.num_samples,), dtype=torch.long ).cuda(device = self.device)
 
     def loss(self, student_logits,x_index):
