@@ -15,7 +15,7 @@ class Teacher:
     def __init__(self, num_samples = 50000,num_classes = 10,teacher_threshold = 0.99,device = 0):
         self.threshold = teacher_threshold
         self.num_classes = num_classes
-        self.num_samples
+        self.num_samples = num_samples
         self.device = device
         self.lossfn = nn.CrossEntropyLoss()
         self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
