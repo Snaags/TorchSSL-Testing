@@ -33,7 +33,7 @@ class Teacher:
             prob_value , class_value = torch.max(prob, dim = 1)
             mask = prob_value.ge(self.threshold).long()
             masked_probs = mask * prob.transpose(0,1)
-            self.probabilites_by_idx[x_index] = masked_probs.transpose(0,1)
+            self.probabilites_by_idx[x_index].cuda(device = self.device) = masked_probs.transpose(0,1).cuda(device = self.device)
             self.prediction_count[x_index] += mask
     def clean(self,arr):
         arr[arr!=arr] = 0  
