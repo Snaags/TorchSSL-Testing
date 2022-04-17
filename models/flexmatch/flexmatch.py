@@ -85,6 +85,8 @@ class FlexMatch:
 
 
         ngpus_per_node = torch.cuda.device_count()
+        if teacher != None:
+            teacher.set_device(args.gpu)
         # EMA Init
         self.model.train()
         self.ema = EMA(self.model, self.ema_m)
@@ -378,6 +380,8 @@ class FlexRetrain(FlexMatch):
         self.teacher_loss_schedule = self.schedule(args.num_train_iter,self.teacher_loss_ratio)
         teacher.graduate_teacher()
         self.it = 0
+        if teacher != None:
+            teacher.set_device(args.gpu)
         self.num_eval_iter = args.num_eval_iter
         ngpus_per_node = torch.cuda.device_count()
         # EMA Init

@@ -20,6 +20,12 @@ class Teacher:
         self.probabilites_by_idx = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
         self.prediction_count =  torch.zeros((num_samples,), dtype=torch.long ).cuda(device = device)
         self.averaged_teacher_logits = torch.zeros((num_samples,num_classes ), dtype=torch.float ).cuda(device = device)
+
+    def set_device(self, device):
+        self.device = device
+        self.probabilites_by_idx.cuda(device = self.device)
+        self.prediction_count.cuda(device = self.device)
+        self.averaged_teacher_logits.cuda(device = self.device) 
     def update(self, logits, x_index):
         with torch.no_grad():
             prob = torch.softmax(logits, dim=1)
