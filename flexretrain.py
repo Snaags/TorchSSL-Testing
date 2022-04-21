@@ -14,9 +14,10 @@ import torch.multiprocessing as mp
 
 from utils import net_builder, get_logger, count_parameters, over_write_args_from_file, Label_Metrics, Teacher
 from train_utils import TBLog, get_optimizer, get_cosine_schedule_with_warmup
-from models.flexmatch.flexmatch import FlexRetrain
+from models.flexretrain.flexretrain import FlexRetrain
 from datasets.ssl_dataset import SSL_Dataset, ImageNetLoader
 from datasets.data_utils import get_data_loader
+from datasets.dataset import TeacherDataset
 
 
 def main(args):
@@ -239,13 +240,28 @@ def main_worker(gpu, ngpus_per_node, args):
 
     ##Get correct labels for metrics
 
-
-    eval_label = Label_Metrics(train_dset)
+    train_full, labels_eval = train_dset.get_data()
+    eval_label = Label_Metrics(labels_eval)
     # START TRAINING of flexmatch
     teacher = Teacher()
     trainer = model.retrain
     model.train(args,logger = logger, lb_eval = eval_label,teacher = teacher) #Initial normal run of flexmatch
     for epoch in range(args.epoch):
+
+        ##Create New teacher dataloader for supervised training
+        teacher.graduate_teacher()
+        indexes, labels = teacher.dataset()
+        teacher_ds = TeacherDataset(train_full,indexes,labels,transform = train_dset.transform)
+        loader_dict['train_teacher'] = get_data_loader(teacher_ds,
+                                                  args.batch_size,
+                                                  data_sampler=args.train_sampler,
+                                                  num_iters=args.num_train_iter,
+                                                  num_workers=args.num_workers,
+                                                  distributed=args.distributed)
+
+        eval_label.teacher_df(teacher,labels, indexes)
+        model.set_data_loader(loader_dict)
+        eval_label.eval_teacher(teacher)
         trainer(args, logger=logger, lb_eval = eval_label,teacher = teacher)
 
     if not args.multiprocessing_distributed or \

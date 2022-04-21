@@ -8,11 +8,15 @@ import torch
 import pandas as pd
 from train_utils import ce_loss
 import torch.nn as nn
+
+def bool_indexes(mask):
+    return torch.Tensor(list(range(len(mask))))[mask.ge(0.9)].cuda(device = mask.device)
+
 class Teacher:
     """
     This class enables teacher training without requiring model inference via a lookup table
     """
-    def __init__(self, num_samples = 50000,num_classes = 10,teacher_threshold = 0.99,device = 0):
+    def __init__(self, num_samples = 50000,num_classes = 10,teacher_threshold = 0.97,device = 0):
         self.threshold = teacher_threshold
         self.num_classes = num_classes
         self.num_samples = num_samples
@@ -27,31 +31,46 @@ class Teacher:
         self.probabilities_by_index = self.probabilites_by_idx.cuda(device = self.device)
         self.prediction_count.cuda(device = self.device)
         self.averaged_teacher_logits.cuda(device = self.device) 
+
     def update(self, logits, x_index):
         with torch.no_grad():
             logits = logits.cuda(device = self.device)
             prob = torch.softmax(logits, dim=1)
-            prob_value , class_value = torch.max(prob, dim = 1)
-            mask = prob_value.ge(self.threshold).long()
-            masked_probs = mask * prob.transpose(0,1)
-            self.probabilites_by_idx.cuda(device = self.device)
-            self.probabilites_by_idx[x_index] = masked_probs.transpose(0,1).cuda(device = self.device)
-            self.prediction_count[x_index] += mask
+            #prob_value , class_value = torch.max(prob, dim = 1)
+            #mask = prob_value.ge(self.threshold).long()
+            #masked_probs = mask * prob.transpose(0,1)
+            #self.probabilites_by_idx[x_index] += masked_probs.transpose(0,1).cuda(device = self.device)
+            self.probabilites_by_idx[x_index] += prob
+            self.prediction_count[x_index] = torch.add(self.prediction_count[x_index],1)
+
     def clean(self,arr):
         arr[arr!=arr] = 0  
         arr[arr == float("inf")] = 0
         return arr
 
-
-        
     def graduate_teacher(self):
-
         self.averaged_teacher_logits += (self.probabilites_by_idx.transpose(0,1) / self.prediction_count).transpose(0,1)
         self.averaged_teacher_logits = self.clean(self.averaged_teacher_logits)
-        self.active = (self.prediction_count != 0)
+        prob_value, class_value = torch.max(self.averaged_teacher_logits,dim = 1)
+        self.class_value = class_value
+        self.active = prob_value.ge(self.threshold)
         print("Total number of active labels : {}".format(torch.sum(self.active)))
         self.probabilites_by_idx = torch.zeros((self.num_samples,self.num_classes ), dtype=torch.float ).cuda(device = self.device)
         self.prediction_count =  torch.zeros((self.num_samples,), dtype=torch.long ).cuda(device = self.device)
+
+    def dataset(self):
+        indexes = bool_indexes(self.active)
+        return indexes.cpu(), self.class_value.cpu()
+
+
+    def hard_label_loss(self, student_logits, x_index):
+        _, targets = torch.max(self.averaged_teacher_logits[x_index],dim = 1)
+        return ce_loss(student_logits, targets, use_hard_labels=True, reduction='mean')
+
+    def valid_samples(self, x_index):
+        samples_active = self.active[x_index]
+        print("valid samples: {} {} ".format(samples_active.shape, x_index[samples_active].shape))
+        return samples_active
 
     def loss(self, student_logits,x_index):
         samples_active = self.active[x_index]
@@ -61,9 +80,10 @@ class Teacher:
 
 
 class Label_Metrics:
-    def __init__(self, train):
-        self.labels = torch.from_numpy(np.asarray(train.get_correct_labels())).cuda()
+    def __init__(self, labels):
+        self.labels = torch.from_numpy(np.asarray(labels)).cuda()
         self.acc_df = pd.DataFrame(columns = ["u_acc", "iteration", "true accuracy", "threshold","quantity"])
+        self.it = 0
     def eval_batch(self, pseudolabels,index): 
         correct = np.sum(np.where(self.labels[index.cpu().numpy()] == pseudolabels.cpu().numpy(),1,0))
         active = len(pseudolabels)
@@ -71,8 +91,33 @@ class Label_Metrics:
         print("percentage accuracy in batch : {}".format(correct/active))
         print("Total number of labels in batch = {}".format(active))
 
+    def teacher_df(self, teacher,labels,indexes):
+        self.teacher_processed_df = pd.DataFrame(data = teacher.probabilities_by_index.cpu().numpy())
+        self.teacher_processed_df.to_csv("teacher_processed.csv", index=False)
+        self.teacher_labels_df = pd.DataFrame()
+        self.teacher_labels_df["teacher"] = labels.cpu().numpy()
+        self.teacher_labels_df["true"] = self.labels.cpu().numpy() 
+        self.teacher_labels_df["active"] = teacher.active.cpu().numpy()
+
+        self.teacher_labels_df.to_csv("teacher_labels.csv", index=False)
+        self.teacher_preds_df = pd.DataFrame(data = teacher.prediction_count.cpu().numpy())
+        self.teacher_preds_df.to_csv("teacher_pred.csv", index=False)
+    def eval_teacher(self,teacher):
+        v, i = torch.max(teacher.averaged_teacher_logits , dim = 1)
+        correct = torch.sum( (self.labels == i) )
+        correct_and_active = torch.sum(self.labels[teacher.active] == i[teacher.active])
+        active = torch.sum(teacher.active)
+        print("Total number of correct labels = {}".format(correct))
+        print("Total number of correct labels (with threshold) = {}".format(correct_and_active))
+        print("percentage accuracy (without threshold): {}".format(correct/active if active != 0 else 0))
+        print("percentage accuracy (with threshold): {}".format(correct_and_active/active if active != 0 else 0))
+        print("Total number of labels active = {}".format(active))
+        self.teacher_logits_df = pd.DataFrame(data = teacher.averaged_teacher_logits.cpu().numpy())
+        self.teacher_logits_df.to_csv("teacher_logits.csv", index=False)
+
+        #self.teacher_df(teacher)
+
     def eval_total(self,selected_label):
-         
         correct_labels = self.labels
         correct = torch.sum(self.labels == selected_label).item()
         active = torch.sum(selected_label != -1).item()
@@ -81,6 +126,7 @@ class Label_Metrics:
         print("Total number of labels active = {}".format(active))
 
     def prob_eval(self,logits, x_index,acc,it):
+        self.it = it 
         print("logits shape: {}".format(logits.shape))
         prob = torch.softmax(logits, dim=1)
         prob_value , class_value = torch.max(prob, dim = 1)

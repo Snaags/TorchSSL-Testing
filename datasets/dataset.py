@@ -109,3 +109,25 @@ class BasicDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class TeacherDataset(BasicDataset):
+        def __init__(self, data, indexes, labels, transform, num_classes = 10):
+            self.indexes = indexes.long()
+            super().__init__(
+                     "flexmatch",
+                     data,
+                     targets=labels,
+                     num_classes=num_classes,
+                     transform=transform,
+                     is_ulb=False,
+                     strong_transform=None,
+                     onehot=False)
+
+        def __getitem__(self,idx):
+            return super().__getitem__(self.indexes[idx])
+
+
+
+        def __len__(self):
+            return len(self.indexes)
