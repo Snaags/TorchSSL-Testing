@@ -259,6 +259,12 @@ def main_worker(gpu, ngpus_per_node, args):
                                                   num_workers=args.num_workers,
                                                   distributed=args.distributed)
 
+        optimizer = get_optimizer(model.model, args.optim, args.lr, args.momentum, args.weight_decay)
+        scheduler = get_cosine_schedule_with_warmup(optimizer,
+                                                args.num_train_iter,
+                                                num_warmup_steps=args.num_train_iter * 0)
+        ## set SGD and cosine lr on flexmatch
+        model.set_optimizer(optimizer, scheduler)
         eval_label.teacher_df(teacher,labels, indexes)
         model.set_data_loader(loader_dict)
         eval_label.eval_teacher(teacher)
